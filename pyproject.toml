@@ -9,7 +9,7 @@ packages = [{ include = "be_task_ca" }]
 [tool.poetry.dependencies]
 python = "^3.11"
 sqlalchemy = "^2.0.11"
-psycopg2 = "^2.9.6"
+psycopg2-binary = "^2.9.10"
 fastapi = "^0.95.1"
 uvicorn = "^0.22.0"
 
@@ -23,26 +23,49 @@ flake8-pyproject = "^1.2.3"
 cohesion = "^1.1.0"
 black = "^23.3.0"
 mypy = "^1.2.0"
+ruff = "^0.11.9"
+pytest-asyncio = "0.21.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-start = "scripts:start"
-schema = "be_task_ca.commands:create_db_schema"
-graph = "scripts:create_dependency_graph"
-tests = "scripts:run_tests"
-lint = "scripts:run_linter"
-format = "scripts:auto_format"
-typing = "scripts:check_types"
+start = "scripts.utils:start"
+schema = "be_task_ca.app.commands.schema:create_db_schema"
+graph = "scripts.utils:create_dependency_graph"
+tests = "scripts.utils:run_tests"
+lint = "scripts.utils:run_linter"
+format = "scripts.utils:auto_format"
+typing = "scripts.utils:check_types"
 
 [tool.flake8]
 per-file-ignores = [
-    'api.py:B008', #ignore Depends(get_db) warnings
+    'be_task_ca/app/main.py:B008', #ignore Depends(get_db) warnings
 ]
 max-line-length = 88
 count = true
 
-[tool.mypy]
+# [tool.mypy]
 #plugins = "sqlalchemy.ext.mypy.plugin"
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+addopts = [
+    # "--create-db",
+    "--ignore=docs_src",
+    "-p no:cacheprovider",
+    "-p no:tornado",
+]
+# pythonpath = ["."]
+testpaths = ["tests"]
+norecursedirs = [".venv", ".git"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore::ResourceWarning",
+    "ignore::RuntimeWarning",
+    "ignore::SyntaxWarning",
+    "ignore::UserWarning",
+]
+asyncio_mode = "auto"
