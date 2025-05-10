@@ -1,26 +1,39 @@
-"""
-This module defines the core entities for the user domain.
+"""This module defines the core entities for the user domain.
 
 These entities are simple data classes representing the structure of
 user-related data within the application, independent of the database
 or API layers.
 """
-from dataclasses import dataclass
+
+from dataclasses import asdict, dataclass
 from uuid import UUID
+
+
+@dataclass
+class CartItem:
+    """Represents an item within a user's shopping cart."""
+
+    user_id: UUID
+    item_id: UUID
+    quantity: int
+
+    def __post_init__(self) -> None:
+        if self.quantity <= 0:
+            raise ValueError("Quantity must be positive")
+
+    def model_dump(self) -> dict:
+        """Converts the CartItem dataclass instance to a dictionary.
+
+        Returns:
+            A dictionary representation of the CartItem instance.
+        """
+        return asdict(self)
+
 
 @dataclass
 class User:
-    """Represents a user in the system.
+    """Represents a user in the system."""
 
-    Attributes:
-        id: The unique identifier for the user.
-        email: The user's email address (must be unique).
-        first_name: The user's first name.
-        last_name: The user's last name.
-        hashed_password: The user's password, hashed for security.
-        shipping_address: The user's shipping address (optional).
-        cart_items: A list of CartItem objects associated with this user.
-    """
     id: UUID
     email: str
     first_name: str
@@ -29,16 +42,10 @@ class User:
     shipping_address: str | None
     cart_items: list["CartItem"]
 
+    def model_dump(self) -> dict:
+        """Converts the User dataclass instance to a dictionary.
 
-@dataclass
-class CartItem:
-    """Represents an item within a user's shopping cart.
-
-    Attributes:
-        user_id: The unique identifier of the user who owns this cart item.
-        item_id: The unique identifier of the item in the cart.
-        quantity: The number of units of this item in the cart.
-    """
-    user_id: UUID
-    item_id: UUID
-    quantity: int
+        Returns:
+            A dictionary representation of the User instance.
+        """
+        return asdict(self)

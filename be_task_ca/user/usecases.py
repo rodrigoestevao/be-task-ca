@@ -1,20 +1,16 @@
+"""This module contains the use cases for user-related operations.
+
+Use cases encapsulate the business logic of the application, orchestrating
+interactions between entities, repositories, and other services to achieve
+specific outcomes related to users and their carts.
+"""
+
 import hashlib
-from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from uuid import UUID, uuid4
 
-from ..item.model import Item
-
-from ..item.repository import find_item_by_id
-
-from .model import CartItem, User
-
-from .repository import (
-    find_cart_items_for_user_id,
-    find_user_by_email,
-    find_user_by_id,
-    save_user,
-)
-from .schema import (
+from be_task_ca.user.entities import CartItem, User
+from be_task_ca.user.interfaces import ItemService, UserRepository
+from be_task_ca.user.schema import (
     AddToCartRequest,
     AddToCartResponse,
     CreateUserRequest,
@@ -22,64 +18,138 @@ from .schema import (
 )
 
 
-def create_user(create_user: CreateUserRequest, db: Session) -> CreateUserResponse:
-    search_result = find_user_by_email(create_user.email, db)
-    if search_result is not None:
-        raise HTTPException(
-            status_code=409, detail="An user with this email adress already exists"
+class CreateUserUseCase:
+    """Use case for creating a new user.
+
+    This class handles the business logic required to create a user,
+    including checking for existing users with the same email, hashing
+    the password, and persisting the new user.
+    """
+
+    def __init__(self, user_repository: UserRepository) -> None:
+        self.user_repository = user_repository
+
+    def execute(self, request: CreateUserRequest) -> CreateUserResponse:
+        """Executes the user creation process.
+
+        Checks if a user with the given email already exists. If not,
+        it creates a new User entity, hashes the password, saves it
+        through the repository, and returns the details of the created user.
+
+        Args:
+            request: A CreateUserRequest object containing the data for the new user.
+
+        Raises:
+            ValueError: If a user with the same email address already exists.
+
+        Returns:
+            A CreateUserResponse object with the details of the newly created user.
+        """
+        if self.user_repository.find_by_email(request.email):
+            raise ValueError("An user with this email already exists")
+        user = User(
+            id=uuid4(),
+            first_name=request.first_name,
+            last_name=request.last_name,
+            email=request.email,
+            hashed_password=hashlib.sha512(
+                request.password.encode("utf-8")
+            ).hexdigest(),
+            shipping_address=request.shipping_address,
+            cart_items=[],
+        )
+        saved_user = self.user_repository.save(user)
+        return CreateUserResponse(**saved_user.model_dump())
+
+
+class AddItemToCartUseCase:
+    """Use case for adding an item to a user's shopping cart.
+
+    This class handles the business logic for adding an item to a cart,
+    including validating the user and item, checking item stock, ensuring
+    the item isn't already in the cart, and then saving the updated cart.
+    """
+
+    def __init__(
+        self, user_repository: UserRepository, item_service: ItemService
+    ) -> None:
+        self.user_repository = user_repository
+        self.item_service = item_service
+
+    async def execute(
+        self, user_id: UUID, request: AddToCartRequest
+    ) -> AddToCartResponse:
+        """Executes the process of adding an item to a user's cart.
+
+        Validations performed:
+        - Checks if the user exists.
+        - Checks if the item exists using the item_service.
+        - Checks if there is enough stock for the item using the item_service.
+        - Checks if the item is already present in the user's cart.
+
+        If all validations pass, the item is added to the user's cart,
+        the user entity is saved, and the updated cart contents are returned.
+
+        Args:
+            user_id: The ID of the user to whose cart the item will be added.
+            request: An AddToCartRequest object containing the item ID and quantity.
+
+        Raises:
+            ValueError: If the user does not exist, item does not exist, not enough stock,
+                        or item is already in the cart.
+
+        Returns:
+            An AddToCartResponse object representing the current state of the user's cart.
+        """
+        user = self.user_repository.find_by_id(user_id)
+        if not user:
+            raise ValueError("User does not exists")
+        item = await self.item_service.get_item(request.item_id)
+        if not item:
+            raise ValueError("Item does not exists")
+        if not await self.item_service.check_stock(
+            request.item_id, quantity=request.quantity
+        ):
+            raise ValueError("Not enough items in stock")
+        if any(cart_item.item_id == request.item_id for cart_item in user.cart_items):
+            raise ValueError("Item already in cart")
+        cart_item = CartItem(
+            user_id=user_id, item_id=request.item_id, quantity=request.quantity
+        )
+        user.cart_items.append(cart_item)
+        self.user_repository.save(user)
+        return AddToCartResponse(
+            items=[
+                AddToCartRequest(item_id=cart_item.item_id, quantity=cart_item.quantity)
+                for cart_item in user.cart_items
+            ]
         )
 
-    new_user = User(
-        first_name=create_user.first_name,
-        last_name=create_user.last_name,
-        email=create_user.email,
-        hashed_password=hashlib.sha512(
-            create_user.password.encode("UTF-8")
-        ).hexdigest(),
-        shipping_address=create_user.shipping_address,
-    )
 
-    save_user(new_user, db)
+class ListItemsInCartUseCase:
+    """Use case for listing all items in a user's shopping cart.
 
-    return CreateUserResponse(
-        id=new_user.id,
-        first_name=new_user.first_name,
-        last_name=new_user.last_name,
-        email=new_user.email,
-        shipping_address=new_user.shipping_address,
-    )
+    This class handles the business logic for retrieving and presenting
+    the items currently in a specified user's cart.
+    """
 
+    def __init__(self, user_repository: UserRepository) -> None:
+        self.user_repository = user_repository
 
-def add_item_to_cart(user_id: int, cart_item: AddToCartRequest, db: Session) -> AddToCartResponse:
-    user: User = find_user_by_id(user_id, db)
-    if user is None:
-        raise HTTPException(status_code=404, detail="User does not exist")
+    def execute(self, user_id: UUID) -> AddToCartResponse:
+        """Executes the process of listing items in a user's cart.
 
-    item: Item = find_item_by_id(cart_item.item_id, db)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item does not exist")
-    if item.quantity < cart_item.quantity:
-        raise HTTPException(status_code=409, detail="Not enough items in stock")
+        Args:
+            user_id: The ID of the user whose cart items are to be listed.
 
-    item_ids = [o.item_id for o in user.cart_items]
-    if cart_item.item_id in item_ids:
-        raise HTTPException(status_code=409, detail="Item already in cart")
-
-    new_cart_item: CartItem = CartItem(
-        user_id=user.id, item_id=cart_item.item_id, quantity=cart_item.quantity
-    )
-
-    user.cart_items.append(new_cart_item)
-
-    save_user(user, db)
-
-    return list_items_in_cart(user.id, db)
-
-
-def list_items_in_cart(user_id, db):
-    cart_items = find_cart_items_for_user_id(user_id, db)
-    return AddToCartResponse(items=list(map(cart_item_model_to_schema, cart_items)))
-
-
-def cart_item_model_to_schema(model: CartItem):
-    return AddToCartRequest(item_id=model.item_id, quantity=model.quantity)
+        Returns:
+            An AddToCartResponse object containing a list of items in the user's
+            cart.
+        """
+        cart_items = self.user_repository.find_cart_items(user_id)
+        return AddToCartResponse(
+            items=[
+                AddToCartRequest(item_id=cart_item.item_id, quantity=cart_item.quantity)
+                for cart_item in cart_items
+            ]
+        )
