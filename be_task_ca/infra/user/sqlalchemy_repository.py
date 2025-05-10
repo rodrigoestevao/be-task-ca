@@ -22,11 +22,6 @@ class SQLAlchemyUserRepository(UserRepository):
     """
 
     def __init__(self, db: Session) -> None:
-        """Initializes the SQLAlchemyUserRepository with a database session.
-
-        Args:
-            db: The SQLAlchemy Session to be used for all database operations.
-        """
         self.db = db
 
     def save(self, user: User) -> User:

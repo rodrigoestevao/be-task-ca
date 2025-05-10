@@ -26,8 +26,8 @@ class SQLAlchemyItemRepository(ItemRepository):
     def save(self, item: Item) -> Item:
         """Saves an item to the repository.
 
-        If the item already exists (e.g., based on its ID), it should be updated.
-        If it's a new item, it should be created.
+        If the item already exists (e.g., based on its ID), it is updated.
+        If it's a new item, it is created.
 
         Args:
             item: The Item entity to save.
@@ -36,14 +36,21 @@ class SQLAlchemyItemRepository(ItemRepository):
             The saved Item entity, potentially with updated fields (e.g., generated
             ID or timestamps).
         """
-        db_item = ItemModel(
-            id=item.id,
-            name=item.name,
-            description=item.description,
-            price=item.price,
-            quantity=item.quantity,
-        )
-        self.db.add(db_item)
+        db_item = self.db.query(ItemModel).filter(ItemModel.id == item.id).first()
+        if not db_item:
+            db_item = ItemModel(
+                id=item.id,
+                name=item.name,
+                description=item.description,
+                price=item.price,
+                quantity=item.quantity,
+            )
+            self.db.add(db_item)
+        else:
+            db_item.name = item.name
+            db_item.description = item.description
+            db_item.price = item.price
+            db_item.quantity = item.quantity
         self.db.commit()
         return item
 

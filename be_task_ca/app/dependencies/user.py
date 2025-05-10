@@ -6,6 +6,7 @@ They handle the creation of necessary repositories and services, injecting
 database sessions where needed.
 """
 
+import os
 from collections.abc import Iterator
 
 from fastapi import Request
@@ -16,8 +17,10 @@ from be_task_ca.domain.user.usecases import (
     ListItemsInCartUseCase,
 )
 from be_task_ca.infra.database import SessionLocal
+from be_task_ca.infra.user.in_memory_repository import InMemoryUserRepository
 from be_task_ca.infra.user.item_service import MockItemService
 from be_task_ca.infra.user.sqlalchemy_repository import SQLAlchemyUserRepository
+from be_task_ca.interfaces.user import UserRepository
 
 
 def get_db(request: Request) -> Iterator:  # noqa: ARG001
@@ -41,6 +44,18 @@ def get_db(request: Request) -> Iterator:  # noqa: ARG001
         db.close()
 
 
+def get_user_repository(request: Request) -> UserRepository:
+    """Returns the appropriate UserRepository based on environment configuration.
+
+    Uses InMemoryUserRepository if REPOSITORY_TYPE is set to 'in_memory', otherwise
+    uses SQLAlchemyUserRepository.
+    """
+    repository_type = os.getenv("REPOSITORY_TYPE", "sqlalchemy")
+    if repository_type == "in_memory":
+        return InMemoryUserRepository()
+    return SQLAlchemyUserRepository(next(get_db(request)))
+
+
 def get_create_user_use_case(request: Request) -> CreateUserUseCase:
     """Dependency to get an instance of CreateUserUseCase.
 
@@ -53,7 +68,7 @@ def get_create_user_use_case(request: Request) -> CreateUserUseCase:
     Returns:
         An instance of CreateUserUseCase.
     """
-    return CreateUserUseCase(SQLAlchemyUserRepository(next(get_db(request))))
+    return CreateUserUseCase(get_user_repository(request))
 
 
 def get_add_item_to_cart_use_case(request: Request) -> AddItemToCartUseCase:
@@ -68,9 +83,7 @@ def get_add_item_to_cart_use_case(request: Request) -> AddItemToCartUseCase:
     Returns:
         An instance of AddItemToCartUseCase.
     """
-    return AddItemToCartUseCase(
-        SQLAlchemyUserRepository(next(get_db(request))), MockItemService()
-    )
+    return AddItemToCartUseCase(get_user_repository(request), MockItemService())
 
 
 def get_list_all_items_in_cart_use_case(request: Request) -> ListItemsInCartUseCase:
@@ -85,4 +98,4 @@ def get_list_all_items_in_cart_use_case(request: Request) -> ListItemsInCartUseC
     Returns:
         An instance of ListItemsInCartUseCase.
     """
-    return ListItemsInCartUseCase(SQLAlchemyUserRepository(next(get_db(request))))
+    return ListItemsInCartUseCase(get_user_repository(request))
